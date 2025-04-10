@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>EEG Command Visualizer</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f0f0f0;
+      margin: 0;
+      padding: 20px;
+    }
+    .container {
+      text-align: center;
+    }
+    .state-display {
+      width: 200px;
+      height: 200px;
+      border-radius: 50%;
+      margin: 20px auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      font-weight: bold;
+      transition: all 0.5s ease;
+    }
+    .state-on {
+      background-color: #4CAF50;
+      box-shadow: 0 0 20px #4CAF50;
+      color: white;
+    }
+    .state-off {
+      background-color: #f44336;
+      box-shadow: 0 0 20px #f44336;
+      color: white;
+    }
+    .sequence-display {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .sequence-item {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      transition: all 0.3s ease;
+    }
+    .sequence-item.active {
+      transform: scale(1.2);
+    }
+    .upload-form {
+      margin: 20px 0;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      background-color: #2196F3;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      margin: 10px;
+    }
+    button:hover {
+      background-color: #1976D2;
+    }
+    .error-message {
+      color: #f44336;
+      margin: 10px 0;
+      padding: 10px;
+      border-radius: 5px;
+      background-color: #ffebee;
+      display: none;
+    }
+    .loading {
+      display: none;
+      margin: 10px 0;
+      color: #2196F3;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>EEG State Visualization</h1>
+    
+    <div class="state-display" id="currentState"></div>
+    
+    <div class="sequence-display" id="sequenceDisplay"></div>
+    
+    <div class="error-message" id="errorMessage"></div>
+    <div class="loading" id="loading">Processing EDF file...</div>
+    
+    <div class="upload-form">
+      <form id="uploadForm" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".edf" required>
+        <button type="submit">Upload EDF</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const currentState = document.getElementById('currentState');
+    const sequenceDisplay = document.getElementById('sequenceDisplay');
+    const errorMessage = document.getElementById('errorMessage');
+    const loading = document.getElementById('loading');
+    const uploadForm = document.getElementById('uploadForm');
+    let currentSequence = [];
+
+    socket.on('eeg_update', function(data) {
+      const state = data.state;
+      const index = data.index;
+      
+      // Update current state display
+      currentState.textContent = state.toUpperCase();
+      currentState.className = 'state-display state-' + state;
+      
+      // Update sequence display
+      updateSequenceDisplay(state, index);
+    });
+
+    function updateSequenceDisplay(state, index) {
+      // Create or update sequence item
+      if (!currentSequence[index]) {
+        const item = document.createElement('div');
+        item.className = 'sequence-item state-' + state;
+        item.textContent = state === 'on' ? 'O' : 'X';
+        sequenceDisplay.appendChild(item);
+        currentSequence[index] = item;
+      }
+      
+      // Remove active class from all items
+      currentSequence.forEach(item => item.classList.remove('active'));
+      
+      // Add active class to current item
+      currentSequence[index].classList.add('active');
+    }
+
+    function showError(message) {
+      errorMessage.textContent = message;
+      errorMessage.style.display = 'block';
+      setTimeout(() => {
+        errorMessage.style.display = 'none';
+      }, 5000);
+    }
+
+    uploadForm.addEventListener('submit', function(e) {
+      e.preventDefault();
+      
+      const formData = new FormData(this);
+      const file = formData.get('file');
+      
+      if (!file) {
+        showError('Please select a file');
+        return;
+      }
+      
+      if (!file.name.endsWith('.edf')) {
+        showError('Please upload an EDF file');
+        return;
+      }
+
+      // Clear previous sequence
+      sequenceDisplay.innerHTML = '';
+      currentSequence = [];
+      currentState.textContent = 'OFF';
+      currentState.className = 'state-display';
+      
+      // Show loading
+      loading.style.display = 'block';
+      errorMessage.style.display = 'none';
+
+      fetch('/upload', {
+        method: 'POST',
+        body: formData
+      })
+      .then(response => response.json())
+      .then(data => {
+        loading.style.display = 'none';
+        if (data.status === 'success') {
+          console.log('Upload successful:', data.sequence);
+        } else {
+          showError(data.message || 'Error processing file');
+        }
+      })
+      .catch(error => {
+        loading.style.display = 'none';
+        showError('Error uploading file: ' + error.message);
+      });
+    });
+  </script>
+</body>
+</html>
